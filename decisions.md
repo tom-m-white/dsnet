@@ -34,23 +34,27 @@ Also ignored: `tvsum_original/` (license forbids redistribution), `datasets/`, `
 
 ## 2026-09-23: Algorithm 1 (graph construction) — reading of the paper
 
-Implemented in `dstg/graph.py` as a standalone function, tested in isolation (`test_graph.py`).
+Implemented in `dstg/graph.py` (numpy only, no model, no PyG) and tested in isolation on a 10-frame
+toy example (`test_graph.py`, 12 structural checks).
 
-1. **`triu(Y, -1)` for the backward graph → implemented as `tril(Y, -1)`.** As printed it would be
-   upper-triangular, nearly identical to the omni graph. Confirmed by Wang as a typo in the paper.
-   Since `Y` is symmetric, `Y_b = Y_fᵀ`.
-2. **Line 20 normalization is ambiguous in the PDF:** `Y = Y0 / max(Y0) 2` renders without an
-   operator. Read literally as `Y0 / max(Y0) / 2`, which is what is implemented (`NORM_DIVISOR = 2`).
-   This is a constant factor on all edge weights, but edge weights do affect GCN/GAT messages, so it
-   is worth confirming with the authors. Set `NORM_DIVISOR = 1` to test the alternative.
-3. **Off-by-one in the window (line 15).** As printed, `j_e = min(i + w_t, T)` with an exclusive
-   slice links each frame to only `w_t - 1` later neighbours, and the last decay value `A[w_t - 1]`
-   is then never used — a sign the pseudocode is off by one. Implemented as `min(i + w_t + 1, T)`,
-   so each frame links to `w_t` neighbours on each side and the whole decay vector is used.
-   Effect at the paper's settings: SumMe w=20 gives 20 instead of 19 neighbours per side.
-4. **Self-similarity:** the diagonal of `S` is removed (line 1), so there are no self-loops from `S`.
-   GAT/SAGE layers add their own self-connections.
-5. **Decay uses Δt = t+1 (1-based)**, per line 4, so the nearest neighbour has decay `ℓ¹`, not `ℓ⁰`.
+**Almost certainly a typo in the paper (not yet confirmed with the authors)**
+
+1. **Line 22, `Y_b = triu(Y, -1)` → implemented as `tril(Y, -1)`.** As printed the backward graph
+   would be upper-triangular and nearly identical to the omni graph, which would make the backward
+   branch redundant by construction. Wang flagged the same reading and directed the lower-triangular
+   implementation. Since `Y` is symmetric, `Y_b = Y_f^T`.
+
+**Ambiguous, I need to ask Wang, implementation suggested**
+
+5. **Window bounds, lines 14-16.** `j_s : j_e` can be read exclusively (Python) or inclusively
+   (maths), and both are shape-consistent. Exclusive gives `w_t - 1` neighbours per side and leaves
+   the last decay value `A[w_t - 1]` computed but unused; inclusive gives `w_t` neighbours and uses
+   all of `A`. **here is my implementation suggestion, we use** (`j_e = min(i + w_t + 1, T)`), because a
+   computed-but-unused decay value points that way. At SumMe's `w_t = 20`: 20 vs 19 neighbours per side.
+6. **Line 1 defines `X_unit = ||X||_2` and then never uses it** — `S = X·X^T - diag(X·X^T)` is built
+   from the raw `X`. **Here is my Implementation suggestion`S` as cosine similarity** (row-normalized `X`), since otherwise
+   `X_unit` is dead and "frame similarity matrix" normally means cosine. Unlike item 5, this one
+   changes the values, so it is the more important of the two to confirm.
 
 ---
 

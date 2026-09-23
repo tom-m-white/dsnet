@@ -1,201 +1,191 @@
-# DSNet investigation — setup, results, and notes
+# Video summarization: a shared evaluation ruler + a graph-topology ablation
 
-Repo investigated: <https://github.com/li-plus/DSNet> (cloned into `DSNet/`)
-Paper: *DSNet: A Flexible Detect-to-Summarize Network for Video Summarization*, IEEE TIP 2020.
+Research code for an undergraduate research project at Gonzaga University on **video
+summarization** — given a long video, pick the ~15% of it that best represents the whole.
 
-**TL;DR:** DSNet installs and runs on this machine (RTX 4060, Windows 11). The authors'
-pretrained models reproduce the paper's numbers exactly. Training from scratch lands close to them
-(see table below). The data is **not videos**. Each h5 file holds precomputed CNN "features": 1024
-numbers for every 15th frame. While digging I found a few things about the evaluation protocol
-that matter if we plan to compare against this method (see [Things to pay attention to](#things-to-pay-attention-to)).
+The repo contains two things:
 
----
+1. **`evaluate.py`** — one evaluation implementation shared by every model in the project, so that
+   numbers from different people are comparable. It takes a plain array of predicted importance
+   scores and returns **F-score, Kendall's τ and Spearman's ρ**. No model dependency, no deep
+   learning framework needed.
+2. **`dstg/`** — a reimplementation of the graph construction and model from
+   [DSTG-VS](https://doi.org/10.1016/j.patcog.2026.113478) (Li et al., *Pattern Recognition*, 2026),
+   used to test which of its three graph branches (forward, backward, omni) are actually needed.
 
-## 1. What DSNet does (plain English)
+[DSNet](https://github.com/li-plus/DSNet) (Zhu et al., IEEE TIP 2020) is used as a reference model
+and baseline. It is cloned locally rather than vendored; see [Working with the DSNet clone](#working-with-the-dsnet-clone).
 
-*Video summarization* means taking a long video and picking the ~15% of it that best represents the whole.
-
-DSNet treats this like **object detection, but along time**. Where an object detector draws boxes
-around objects in an image, DSNet draws "boxes" (time intervals) around the important parts
-of a video. It then gives each interval a score and keeps the best-scoring shots, up to 15% of
-the video's length (a knapsack problem).
-
-Two variants:
-- **Anchor-based**: proposes fixed-length candidate intervals (4, 8, 16, 32 steps) at every time step, scores them, and refines their boundaries.
-- **Anchor-free**: at every time step, predicts how far the important segment stretches left and right.
-
-The "base model" that reads the frame sequence can be `attention` (default), `lstm`, `bilstm`, `linear`, or
-`gcn`. `gcn` is a **graph** neural network in which every frame is a node and similar frames are
-connected by edges. That option is the reason the repo needs `torch_geometric`.
+**Status:** work in progress. `evaluate.py` and the graph construction are done and tested; the
+model and the ablation runs are not finished yet.
 
 ---
 
-## 2. Setup (what I did)
+## Why a shared `evaluate.py`
 
-The repo pins Python 3.6 / torch 1.1 (from 2019). Those versions can't use an RTX 40-series GPU, so I used a modern stack:
+Published τ/ρ numbers in this field are not always comparable, because papers do not agree on the
+protocol and often do not state which one they used. The two conventions found in released code:
+
+| | TVSum | SumMe |
+|---|---|---|
+| [CA-SUM](https://github.com/e-apostolidis/CA-SUM) | per annotator, raw ratings from the original `.tsv` | not computed |
+| [CSTA](https://github.com/thswodnjs3/CSTA) | per annotator, raw ratings from the original `.tsv` | annotators averaged, then correlated with the binary summary |
+
+This repo uses the **per-annotator** protocol of
+[Otani et al., CVPR 2019](https://arxiv.org/abs/1903.11328) for both datasets: correlate the
+prediction with each annotator separately, then average. Averaging annotators first produces a
+smoother curve than any real person's and inflates the result — measurably so: under the
+CSTA-style SumMe protocol, **random scores already score τ ≈ 0.09**, while the per-annotator
+protocol puts random at ≈ 0.00.
+
+**Validation.** The human leave-one-out baseline reproduces the published values exactly, which is
+the check that the protocol matches prior work:
+
+| | Published (Otani et al.) | This repo |
+|---|---|---|
+| TVSum, human τ / ρ | 0.177 / 0.204 | **0.177 / 0.204** |
+| SumMe, human τ / ρ | 0.205 / 0.213 | 0.210 / 0.210 |
+| Random scores τ / ρ | 0.000 | 0.001 / 0.002 |
+
+The F-score implementation matches DSNet's own to the last digit on every split-0 test video of both
+datasets, with no shared code between them.
+
+---
+
+## Setup
+
+Python 3.10, PyTorch 2.4.1 (CUDA 12.1), developed on Windows 11 with an RTX 4060.
 
 ```bash
-conda create -n dsnet python=3.10
+conda create -y -n dsnet python=3.10
 conda activate dsnet
 pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-pip install torch_geometric h5py pyyaml tqdm pytest numpy==1.23.5 ortools==9.7.2996 opencv-python==4.8.1.78 "protobuf<5"
+pip install torch_geometric h5py pyyaml tqdm pytest "scipy<1.14" numpy==1.23.5 ortools==9.7.2996 opencv-python==4.8.1.78 "protobuf<5"
 ```
 
-(conda is installed at `C:\Users\white\miniconda3` but isn't on PATH. Use the **Anaconda Prompt**,
-or call `C:\Users\white\miniconda3\envs\dsnet\python.exe` directly.)
+The pinned versions matter: DSNet's original code uses `np.bool` and the pre-9.8 OR-Tools knapsack
+API, both removed in newer releases. `numpy==1.23.5` and `ortools==9.7.2996` keep that code running
+unmodified. `evaluate.py` itself needs only numpy, scipy, h5py and pyyaml.
 
-Datasets and pretrained models were downloaded from the README's Dropbox links into `DSNet/datasets/` and `DSNet/models/`.
+Check the environment with `python check_env.py`.
 
-### Local patches (2 small fixes, both needed only because the libraries are newer)
-| File | Change | Why |
-|---|---|---|
-| `src/helpers/vsumm_helper.py` | Import shim for the OR-Tools knapsack solver | OR-Tools renamed its API. It is the same dynamic-programming solver underneath. |
-| `src/modules/models.py` (GCN) | `edge_indices / seq_len` → `//` | In torch ≥1.5, `/` returns floats, so `--base-model gcn` crashed. `//` restores the integer division the authors intended. |
+### Data
 
-The evaluation math itself is untouched.
+Preprocessed features (h5) from the DSNet release — 1024-dim GoogLeNet pool5 features for every
+15th frame, plus human annotations, KTS shot boundaries and the 5 train/test splits:
+
+```bash
+mkdir -p DSNet/datasets && cd DSNet/datasets
+curl -L -o dsnet_datasets.zip https://www.dropbox.com/s/tdknvkpz1jp6iuz/dsnet_datasets.zip?dl=1
+unzip dsnet_datasets.zip
+```
+
+For TVSum τ/ρ you also need the **original** TVSum release, which contains the per-annotator 1–5
+ratings (`ydata-tvsum50-anno.tsv`). The h5 file does not: its per-annotator field is binary.
+
+```bash
+mkdir -p tvsum_original && cd tvsum_original
+curl -L -O https://people.csail.mit.edu/yalesong/tvsum/tvsum50_ver_1_1.tgz   # 644 MB
+tar -xzf tvsum50_ver_1_1.tgz && cd ydata-tvsum50-v1_1 && unzip ydata-tvsum50-data.zip
+```
+
+**The TVSum release is for non-commercial research use and may not be redistributed.** It is
+gitignored here; download your own copy.
+
+`python inspect_datasets.py` prints what is inside the h5 files and verifies the splits.
 
 ---
 
-## 3. The checklist from the meeting
+## Using `evaluate.py`
 
-### ✅ (1) `import torch`, using conda / ✅ (2) `import torch_geometric` / ✅ (3) h5py opens the files
+Scores are **one value per sampled frame** — the rows of `features` in the h5, aligned with `picks`.
+
+As a library:
+
+```python
+from evaluate import Evaluator
+
+ev = Evaluator("summe")                      # or "tvsum"
+ev.evaluate_video("video_1", scores)         # {"fscore": .., "tau": .., "rho": ..}
+mean, per_video = ev.evaluate_split({"video_1": s1, "video_7": s7})
+```
+
+From the command line, with scores saved as an `.npz` (one array per video name):
+
 ```bash
-python check_env.py
-```
-```
-torch version : 2.4.1+cu121   CUDA available: True   GPU: NVIDIA GeForce RTX 4060 Laptop GPU
-torch_geometric version: 2.8.0.post1   GCNConv on a 4-node graph OK
-opened eccv16_dataset_ovp_google_pool5.h5      -> 50 videos
-opened eccv16_dataset_summe_google_pool5.h5    -> 25 videos
-opened eccv16_dataset_tvsum_google_pool5.h5    -> 50 videos
-opened eccv16_dataset_youtube_google_pool5.h5  -> 39 videos
+python evaluate.py --dataset summe --scores my_scores.npz --split-file DSNet/splits/summe.yml --split 0
+python evaluate.py --dataset tvsum --self-check     # human + random baselines
 ```
 
-### ✅ Unit tests
-`pytest tests`: 25 passed, 2 failed. Both failures come from the test file using an old nose-style
-`setup()` method that pytest 8 no longer calls. They are not DSNet bugs.
+Options: `--summe-protocol csta` reproduces CSTA's SumMe numbers for comparison with published
+results; `--self-check` prints the human and random baselines that validate the protocol.
 
-### ✅ "What's in the h5 files / the features?"
-```bash
-python inspect_datasets.py
-```
-**We don't have the videos. We have what a CNN "measured" about them.** Here is the hospital analogy
-from the meeting. At a check-up you don't hand over your whole body. They draw blood and run a fixed
-panel of tests, and each test gives a number. In the same way, for **every 15th frame** of a video,
-a pretrained image network (GoogLeNet, `pool5` layer) produced a **fixed panel of 1024 numbers**
-describing what is in that frame. DSNet only ever sees these number panels, never pixels.
+**Note:** DSNet ships its own `src/evaluate.py`. If you put `DSNet/src` on `sys.path`, import this
+one *first*, or you will silently get the other module.
 
-Fields stored per video (e.g. TVSum `video_1`):
+---
 
-| Field | Shape | Meaning |
-|---|---|---|
-| `features` | (707, 1024) | 707 sampled frames × 1024 CNN numbers. **This is the model input.** |
-| `picks` | (707,) | Which original frame each row came from: 0, 15, 30, ... |
-| `n_frames` | 10597 | Length of the original video in frames |
-| `n_steps` | 707 | Number of sampled frames (≈ n_frames / 15) |
-| `gtscore` | (707,) | Averaged human "importance" score per sampled frame (the **training** target) |
-| `user_summary` | (20, 10597) | Each annotator's 0/1 keep-or-drop choice for every original frame (the **test** ground truth) |
-| `change_points` | (71, 2) | Start/end frame of each shot, found by the KTS algorithm |
-| `n_frame_per_seg` | (71,) | Length of each shot |
-| `video_name` | SumMe only | e.g. "Air_Force_One" |
+## Reference numbers
 
-> **About "15" and "470" in the notes:** It is 15 *frames*, not 15 pixels. One frame out of every
-> 15 is kept. **470 is the average number of sampled frames (rows of features) per TVSum video.**
-> (Original TVSum videos average 7,047 frames, and 7047 / 15 ≈ 470.)
+DSNet anchor-based (attention), trained here from scratch, per-annotator protocol:
 
-### ✅ TVSum (50) vs SumMe (25)
-The other dataset in the notes is **SumMe**.
-
-| | **TVSum** | **SumMe** |
-|---|---|---|
-| Videos | 50 | 25 |
-| Content | YouTube videos in 10 categories (news, how-to, vlogs, ...) | Personal / egocentric videos (sports, holidays, events) |
-| Annotators per video | 20 | 15–18 |
-| How humans labeled | Each rated **importance scores** (1–5) per 2-second chunk | Each **picked a summary** directly (keep/drop) |
-| Avg. length | 7,047 frames (~470 feature rows) | 4,393 frames (~293 rows) |
-| Shots per video | 17–130 (avg 47) | 7–65 (avg 30) |
-| F-score protocol in code | **average** over annotators | **max** over annotators (best-matching human) |
-| Typical F-score | ~62% | ~50% |
-
-Because the two datasets use different protocols (avg vs. max), **their numbers can't be compared
-with each other**. SumMe is harder and noisier (few videos, and humans disagree more).
-OVP (50) and YouTube (39) are also included. They are used only as extra *training* data in the
-"augmented" and "transfer" settings, never for testing.
-
-### ✅ "Prove there is a training and testing dataset" (the `splits/` folder)
-`splits/*.yml` lists which videos go in `train_keys` and which go in `test_keys`, 5 times over:
-
-| File | Setting | Train on | Test on |
+| | F-score | τ | ρ |
 |---|---|---|---|
-| `tvsum.yml` / `summe.yml` | **Canonical** | 80% of that dataset | the other 20% |
-| `*_aug.yml` | **Augmented** | 80% of that dataset **+ all of the other 3 datasets** | the same 20% |
-| `*_trans.yml` | **Transfer** | **only the other 3 datasets** | all of that dataset |
+| SumMe split 0, 300 epochs, final model | 44.59% | 0.060 | 0.072 |
+| SumMe, published (best epoch by test F-score) | 50.19% | – | – |
 
-Proof from `inspect_datasets.py`: in every split, train (40 videos) and test (10 videos) have
-**zero overlap**, and together they cover all 50 TVSum videos. For SumMe the split is 20 train / 5 test.
+The 5.6-point gap is the cost of **not** selecting the model on the test set. DSNet's trainer keeps
+whichever epoch scored best on the test split; the runs here use a fixed epoch count and the final
+model (`--final-epoch`, added by our patch). Every run in this project follows the latter.
 
-### ✅ Run DSNet: training → evaluation
-**Pretrained models (authors' checkpoints) → `evaluate.py`**:
-```bash
-cd DSNet/src
-python evaluate.py anchor-based --model-dir ../models/pretrain_ab_basic/ --splits ../splits/tvsum.yml ../splits/summe.yml
-python evaluate.py anchor-free  --model-dir ../models/pretrain_af_basic/ --splits ../splits/tvsum.yml ../splits/summe.yml --nms-thresh 0.4
-```
-**Trained from scratch here → `evaluate.py`**:
-```bash
-python train.py    anchor-based --model-dir ../models/ab_basic --splits ../splits/tvsum.yml ../splits/summe.yml
-python evaluate.py anchor-based --model-dir ../models/ab_basic --splits ../splits/tvsum.yml ../splits/summe.yml
-```
-`train.py` writes one checkpoint per split to `models/<name>/checkpoint/`. `evaluate.py` loads those
-checkpoints and scores each split's test videos. Full training takes about 45 minutes on the 4060.
-
-| F-score (%) | TVSum | SumMe |
-|---|---|---|
-| Paper, anchor-based | 62.05 | 50.19 |
-| **Pretrained anchor-based (my run)** | **62.05** ✅ | **50.19** ✅ |
-| Paper, anchor-free | 61.86 | 51.18 |
-| **Pretrained anchor-free (my run)** | **61.86** ✅ | **51.18** ✅ |
-| **Anchor-based trained from scratch (my run)** | **62.32** | **48.32** |
-
-Training from scratch gets within about 2 points of the paper, which is normal run-to-run variation.
-SumMe varies more because each test split has only 5 videos. Per-split details are in
-`DSNet/models/ab_basic/log.txt` (training) and `eval_log.txt` (evaluation).
-
-The F-scores that `evaluate.py` prints for my trained checkpoints are **identical** to the "max"
-F-scores that `train.py` logged. That shows the train → evaluate pipeline is consistent, and it
-also demonstrates point 2 below.
+`python walkthrough.py` traces one video end to end — features, attention, anchors, NMS, knapsack,
+scoring — printing real intermediate values, which is the fastest way to understand the pipeline.
 
 ---
 
-## Things to pay attention to
+## Working with the DSNet clone
 
-These are the points that matter for the question "is the way we evaluate correct?"
+`DSNet/` is upstream's own git repository and is **gitignored** here, so it is never committed into
+this repo. Local changes to it live in `patches/dsnet_local.diff`:
 
-1. **The 5 "splits" are not true 5-fold cross-validation.** They are 5 *independent random* 80/20
-   splits. As a result, **18 of the 50 TVSum videos are never tested**, while one video is tested 4 times.
-   SumMe has the same pattern: 9 of 25 videos are never tested. This convention was inherited from earlier papers (DR-DSN, VASNet).
-2. **The test set is also used to choose the checkpoint.** `train.py` evaluates on `test_keys` after
-   every epoch and saves the epoch with the **highest test F-score**. There is no separate validation
-   set, so the reported numbers are optimistic. You can see this in `log.txt`: the
-   "F-score cur/max" column moves a few points from epoch to epoch, and only the max is kept.
-3. **TVSum and SumMe are scored differently** (average vs. max over annotators). Anyone
-   comparing against DSNet has to use the same protocol and the same split files, or the numbers aren't comparable.
-4. **The features are fixed and old** (2016 GoogLeNet). Without the raw videos we can't
-   re-extract features with a newer backbone. That requires the original TVSum/SumMe videos,
-   and `src/make_dataset.py` shows how to do it.
-5. **The summary length is fixed at 15%**, and the summary is built from KTS shots via the knapsack step.
-   So the F-score depends partly on shot boundaries that the model doesn't control.
+```bash
+git clone https://github.com/li-plus/DSNet.git
+git -C DSNet apply ../patches/dsnet_local.diff
+```
+
+The patch covers the OR-Tools import shim, a `//` fix in the GCN branch (both needed only because
+the libraries are newer than 2019), and the `--final-epoch` flag. **After editing anything inside
+`DSNet/`, regenerate the patch**, or the change exists only on your machine:
+
+```bash
+git -C DSNet diff > patches/dsnet_local.diff
+```
 
 ---
 
-## Files I added
-| File | Purpose |
+## Repo layout
+
+| Path | What it is |
 |---|---|
-| `check_env.py` | Checklist items 1–3 (torch, torch_geometric, h5py) |
-| `inspect_datasets.py` | Dumps h5 contents, compares TVSum vs SumMe, verifies the train/test splits |
-| `README.md` | This file |
+| `evaluate.py` | the shared ruler: F-score, τ, ρ |
+| `export_dsnet_scores.py` | runs a DSNet checkpoint, saves scores as `.npz` for `evaluate.py` |
+| `dstg/graph.py` | DSTG-VS Algorithm 1: features → forward / omni / backward adjacency matrices |
+| `test_graph.py` | structural tests for the above, on a 10-frame toy example |
+| `check_env.py`, `inspect_datasets.py`, `walkthrough.py` | environment check, dataset tour, end-to-end trace |
+| `patches/` | local changes to the DSNet clone |
+| `decisions.md` | log of every judgment call, with the reasoning |
 
-## Open questions for the professor
-- Is the goal to **use DSNet as a baseline** in our own work, or to **audit its evaluation**? Points 1–2 above matter a lot for either.
-- Should I train the other variants next (anchor-free, the `gcn` base model, augmented/transfer splits)?
-- Do we have (or want) the raw videos, so that we could extract our own features?
+**`decisions.md` is the important file.** Where a paper is ambiguous, it records which reading was
+implemented and why — including two places where DSTG-VS's Algorithm 1 can be read more than one way.
+
+---
+
+## Acknowledgments
+
+- [DSNet](https://github.com/li-plus/DSNet) — Zhu, Lu, Li, Zhou, *IEEE TIP* 2020 (MIT licensed)
+- [DSTG-VS](https://doi.org/10.1016/j.patcog.2026.113478) — Li, Jia, Xu, Wang, Meyer, Tan, *Pattern Recognition* 2026
+- [CA-SUM](https://github.com/e-apostolidis/CA-SUM) and [CSTA](https://github.com/thswodnjs3/CSTA) — reference implementations of the correlation protocols
+- Otani, Nakashima, Rahtu, Heikkilä, *Rethinking the Evaluation of Video Summaries*, CVPR 2019
+- Datasets: TVSum (Song et al., CVPR 2015) and SumMe (Gygli et al., ECCV 2014); preprocessed features from [DR-DSN](https://github.com/KaiyangZhou/pytorch-vsumm-reinforce)
+
+Datasets carry their own licenses and are not redistributed here.

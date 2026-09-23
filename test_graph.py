@@ -36,7 +36,13 @@ checks = {
         omni[i, j] == 0 for i in range(T) for j in range(T) if abs(i - j) > W),
     "every in-window pair is non-zero": all(
         omni[i, j] != 0 for i in range(T) for j in range(T) if 0 < abs(i - j) <= W),
-    "weights in [0, 1/2] after normalization": omni.min() >= 0 and omni.max() <= 0.5 + 1e-9,
+    "weights in [0, 1] after normalization": omni.min() >= 0 and omni.max() <= 1 + 1e-9,
+    "strongest edge normalized to 1": abs(omni.max() - 1) < 1e-9,
+    # squaring is monotonic, so ordering is kept while weak edges are pushed down harder:
+    "squaring keeps edge ordering": np.array_equal(
+        np.argsort(omni[omni > 0]), np.argsort(np.sqrt(omni[omni > 0]))),
+    "weakest/strongest ratio is squared": abs(
+        omni[omni > 0].min() - np.sqrt(omni[omni > 0]).min() ** 2) < 1e-9,
     "decay decreases with distance": all(
         np.all(np.diff(temporal_decay(m, 0.7, 8)) <= 1e-12) for m in MODES),
 }

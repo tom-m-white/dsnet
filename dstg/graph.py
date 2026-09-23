@@ -8,7 +8,6 @@ Standalone: numpy only, no model and no PyG. See decisions.md for how the paper 
 """
 import numpy as np
 
-NORM_DIVISOR = 2.0  # line 20: "Y = Y0 / max(Y0) 2" read as "/ 2"; see decisions.md
 MODES = ("exponential", "linear", "logarithmic")
 
 
@@ -61,7 +60,8 @@ def build_graphs(X, mode="exponential", decay=0.7, fusion=0.5, window=20):
         Y0[js:je, i] = W
 
     peak = Y0.max()
-    Y = (Y0 / peak / NORM_DIVISOR) if peak > 0 else Y0  # line 20
+    # line 20 "sparse normalization": squared, which pushes weak edges toward zero
+    Y = (Y0 / peak) ** 2 if peak > 0 else Y0
 
     forward = np.triu(Y, 1)      # i -> later frames only
     backward = np.tril(Y, -1)    # i -> earlier frames only (paper prints triu; see decisions.md)
