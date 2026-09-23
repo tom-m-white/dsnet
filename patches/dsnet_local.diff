@@ -1,0 +1,92 @@
+diff --git a/src/anchor_based/train.py b/src/anchor_based/train.py
+index e800d81..7dd8e19 100644
+--- a/src/anchor_based/train.py
++++ b/src/anchor_based/train.py
+@@ -99,7 +99,7 @@ def train(args, split, save_path):
+ 
+         val_fscore, _ = evaluate(model, val_loader, args.nms_thresh, args.device)
+ 
+-        if max_val_fscore < val_fscore:
++        if max_val_fscore < val_fscore and not args.final_epoch:
+             max_val_fscore = val_fscore
+             torch.save(model.state_dict(), str(save_path))
+ 
+@@ -107,4 +107,7 @@ def train(args, split, save_path):
+                     f'Loss: {stats.cls_loss:.4f}/{stats.loc_loss:.4f}/{stats.loss:.4f} '
+                     f'F-score cur/max: {val_fscore:.4f}/{max_val_fscore:.4f}')
+ 
++    if args.final_epoch:  # [local patch] no model selection on the test set
++        torch.save(model.state_dict(), str(save_path))
++        return val_fscore
+     return max_val_fscore
+diff --git a/src/anchor_free/train.py b/src/anchor_free/train.py
+index f6c3b82..5315990 100644
+--- a/src/anchor_free/train.py
++++ b/src/anchor_free/train.py
+@@ -71,7 +71,7 @@ def train(args, split, save_path):
+ 
+         val_fscore, _ = evaluate(model, val_loader, args.nms_thresh, args.device)
+ 
+-        if max_val_fscore < val_fscore:
++        if max_val_fscore < val_fscore and not args.final_epoch:
+             max_val_fscore = val_fscore
+             torch.save(model.state_dict(), str(save_path))
+ 
+@@ -79,4 +79,7 @@ def train(args, split, save_path):
+                     f'Loss: {stats.cls_loss:.4f}/{stats.loc_loss:.4f}/{stats.ctr_loss:.4f}/{stats.loss:.4f} '
+                     f'F-score cur/max: {val_fscore:.4f}/{max_val_fscore:.4f}')
+ 
++    if args.final_epoch:  # [local patch] no model selection on the test set
++        torch.save(model.state_dict(), str(save_path))
++        return val_fscore
+     return max_val_fscore
+diff --git a/src/helpers/init_helper.py b/src/helpers/init_helper.py
+index ea2e6d3..a1ad2af 100644
+--- a/src/helpers/init_helper.py
++++ b/src/helpers/init_helper.py
+@@ -47,6 +47,8 @@ def get_parser() -> argparse.ArgumentParser:
+     parser.add_argument('--weight-decay', type=float, default=1e-5)
+     parser.add_argument('--lambda-reg', type=float, default=1.0)
+     parser.add_argument('--nms-thresh', type=float, default=0.5)
++    # [local patch] keep the model from the last epoch instead of the epoch with the best TEST F-score
++    parser.add_argument('--final-epoch', action='store_true')
+ 
+     # inference
+     parser.add_argument('--ckpt-path', type=str, default=None)
+diff --git a/src/helpers/vsumm_helper.py b/src/helpers/vsumm_helper.py
+index 3d6b48d..bc1defc 100644
+--- a/src/helpers/vsumm_helper.py
++++ b/src/helpers/vsumm_helper.py
+@@ -1,7 +1,18 @@
+ from typing import Iterable, List
+ 
+ import numpy as np
+-from ortools.algorithms.pywrapknapsack_solver import KnapsackSolver
++try:
++    from ortools.algorithms.pywrapknapsack_solver import KnapsackSolver
++except ImportError:
++    # [local patch] newer ortools renamed the API; same DP solver underneath.
++    from ortools.algorithms.python import knapsack_solver as _ks
++
++    class KnapsackSolver(_ks.KnapsackSolver):
++        KNAPSACK_DYNAMIC_PROGRAMMING_SOLVER = \
++            _ks.SolverType.KNAPSACK_DYNAMIC_PROGRAMMING_SOLVER
++        Init = _ks.KnapsackSolver.init
++        Solve = _ks.KnapsackSolver.solve
++        BestSolutionContains = _ks.KnapsackSolver.best_solution_contains
+ 
+ 
+ def f1_score(pred: np.ndarray, test: np.ndarray) -> float:
+diff --git a/src/modules/models.py b/src/modules/models.py
+index 1b2922a..ec1befd 100644
+--- a/src/modules/models.py
++++ b/src/modules/models.py
+@@ -95,7 +95,7 @@ class GCNExtractor(nn.Module):
+ 
+         edge_indices = edge_indices.unsqueeze(0)
+         edge_indices = torch.cat(
+-            [edge_indices / seq_len, edge_indices % seq_len])
++            [edge_indices // seq_len, edge_indices % seq_len])  # [local patch] was `/`
+ 
+         return edge_indices, edge_weights
+ 

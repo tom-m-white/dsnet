@@ -1,0 +1,23 @@
+# The upstream DSNet clone (its own git repo — never commit it here).
+# Our changes to it are kept as patches/dsnet_local.diff instead.
+DSNet/
+
+# Datasets and downloads (large; TVSum's license forbids redistribution)
+tvsum_original/
+datasets/
+*.h5
+*.tgz
+*.zip
+
+# Run outputs
+models/
+scores/
+results/
+*.npz
+*.pt
+
+# Python / editor
+__pycache__/
+*.pyc
+.vscode/
+.idea/
