@@ -44,6 +44,16 @@ toy example (`test_graph.py`, 12 structural checks).
    branch redundant by construction. Wang flagged the same reading and directed the lower-triangular
    implementation. Since `Y` is symmetric, `Y_b = Y_f^T`.
 
+**Checked and read correctly — no change needed**
+
+2. **Line 20 is `Y = (Y_0 / max(Y_0))^2`** — squared, not "divided by 2". The exponent is lost when
+   the PDF text is extracted, which is how I first misread it; the rendered page is unambiguous.
+   Squaring is what "sparse normalization" means here: it is monotonic, so edge ordering is
+   unchanged, but weak edges are pushed toward zero harder than strong ones.
+3. **Decay uses Δt = t + 1** (line 4), so the nearest neighbour gets `ℓ¹`, not `ℓ⁰`.
+4. **No self-loops from `S`:** line 1 subtracts `diag(X·X^T)`. GATConv adds self-loops itself;
+   SAGEConv instead keeps a separate root weight for the node, so neither layer needs them in `S`.
+
 **Ambiguous, I need to ask Wang, implementation suggested**
 
 5. **Window bounds, lines 14-16.** `j_s : j_e` can be read exclusively (Python) or inclusively
