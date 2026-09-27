@@ -13,6 +13,10 @@ MODES = ("exponential", "linear", "logarithmic")
 
 def temporal_decay(mode, decay, window):
     """A[t] for t = 0..window-1, using distance = t + 1 (line 4 of Algorithm 1)."""
+    if not isinstance(window, (int, np.integer)) or window < 1:
+        raise ValueError("window must be a positive integer")
+    if not np.isfinite(decay) or not 0 <= decay <= 1:
+        raise ValueError("decay must be finite and in [0, 1]")
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     dt = np.arange(1, window + 1, dtype=np.float64)
@@ -20,12 +24,16 @@ def temporal_decay(mode, decay, window):
         return decay ** dt
     if mode == "linear":
         return np.maximum(0.0, 1.0 - decay * dt / window)
+    if window == 1:
+        return np.ones(1)  # sole nearest-neighbour edge has no logarithmic decay
     return np.maximum(0.0, 1.0 - decay * np.log(dt) / np.log(window))
 
 
 def frame_similarity(X):
     """Lines 1-2: cosine similarity between frames, diagonal removed, scaled to max 1."""
     X = np.asarray(X, dtype=np.float64)
+    if X.ndim != 2 or min(X.shape) < 1 or not np.isfinite(X).all():
+        raise ValueError("X must be a finite, nonempty T x D matrix")
     norms = np.linalg.norm(X, axis=1, keepdims=True)
     unit = X / np.maximum(norms, 1e-12)
     S = unit @ unit.T
@@ -44,6 +52,8 @@ def build_graphs(X, mode="exponential", decay=0.7, fusion=0.5, window=20):
     :param window: temporal window w_t; frame i links only to frames within w_t of it.
     """
     X = np.asarray(X, dtype=np.float64)
+    if not np.isfinite(fusion) or not 0 <= fusion <= 1:
+        raise ValueError("fusion must be finite and in [0, 1]")
     T = len(X)
     S = frame_similarity(X)
     A = temporal_decay(mode, decay, window)

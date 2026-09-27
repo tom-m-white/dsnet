@@ -1,6 +1,6 @@
 """Step 1-3 from the meeting: prove torch, torch_geometric and h5py import and work.
 
-Run from anywhere:  python check_env.py
+Run from the repository root:  python -m scripts.check_env
 """
 import torch
 
@@ -28,7 +28,7 @@ import h5py
 from pathlib import Path
 
 print("h5py version:", h5py.__version__)
-data_dir = Path(__file__).parent / "DSNet" / "datasets"
+data_dir = Path(__file__).resolve().parents[1] / "DSNet" / "datasets"
 for path in sorted(data_dir.glob("*.h5")):
     with h5py.File(path, "r") as f:
         print(f"opened {path.name:45s} -> {len(f.keys())} videos")

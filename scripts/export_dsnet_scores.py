@@ -3,7 +3,7 @@
 The score saved is the one DSNet itself feeds into the knapsack: after NMS, each sampled frame
 gets the highest confidence of any predicted segment covering it (vsumm_helper.bbox2summary).
 
-    python export_dsnet_scores.py --model anchor-based \
+    python -m scripts.export_dsnet_scores --model anchor-based \
         --ckpt DSNet/models/pretrain_ab_basic/checkpoint/summe.yml.0.pt \
         --dataset summe --out scores/ab_pretrained_summe_split0.npz
 """
@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import torch
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "DSNet" / "src"))
 from helpers import bbox_helper  # noqa: E402
 from modules.model_zoo import get_model  # noqa: E402

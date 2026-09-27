@@ -1,0 +1,14 @@
+experiment: 20260926_generalization_v1
+purpose: Investigate generalization using only each outer split's training videos.
+variant: V5
+dataset: summe
+outer_splits: [0, 1, 2, 3, 4]
+seeds: [0]
+inner_validation_videos: 4
+partition_seed: 271828
+evaluation_epochs: [0, 1, 25, 50, 100, 150, 200, 250, 300]
+# One-factor comparisons, fixed before looking at their validation results.
+conditions:
+  baseline: {dropout: 0.0, weight_decay: 0.0000001}
+  weight_decay: {dropout: 0.0, weight_decay: 0.0001}
+  attention_dropout: {dropout: 0.3, weight_decay: 0.0000001}

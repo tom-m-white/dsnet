@@ -1,0 +1,7 @@
+frames: 1000
+input_dim: 1024
+repeats: 10
+warmup: 2
+device: auto
+cpu_threads: 4
+rss_poll_seconds: 0.001

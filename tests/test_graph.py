@@ -1,4 +1,4 @@
-"""Test Algorithm 1 in isolation on a 10-frame toy example (run: python test_graph.py).
+"""Test Algorithm 1 in isolation on a 10-frame toy example (run: python -m tests.test_graph).
 
 Checks: omni symmetry, zero outside the window, forward = upper-triangular, backward =
 lower-triangular, forward + backward = omni, and decay monotonicity.

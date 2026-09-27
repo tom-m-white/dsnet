@@ -1,0 +1,31 @@
+# One configuration for all topology variants. Pending choices are in decisions.md.
+variants:
+  V1: [fwd]
+  V2: [bwd]
+  V3: [omni]
+  V4: [fwd, bwd]
+  V5: [fwd, bwd, omni]
+model:
+  input_dim: 1024
+  hidden_dim: 192
+  heads: 1
+  dropout: 0.0
+training:
+  epochs: 300
+  lr: 0.0005
+  weight_decay: 0.0000001
+  device: auto
+  cpu_threads: 4
+  log_every: 25
+datasets:
+  summe:
+    h5: DSNet/datasets/eccv16_dataset_summe_google_pool5.h5
+    splits: DSNet/splits/summe.yml
+    graph: {mode: exponential, decay: 0.7, fusion: 0.5, window: 20}
+    paper_pooling_k_unused: 4
+  tvsum:
+    h5: DSNet/datasets/eccv16_dataset_tvsum_google_pool5.h5
+    splits: DSNet/splits/tvsum.yml
+    annotations: tvsum_original/ydata-tvsum50-v1_1/data/ydata-tvsum50-anno.tsv
+    graph: {mode: linear, decay: 0.9, fusion: 0.3, window: 15}
+    paper_pooling_k_unused: 10

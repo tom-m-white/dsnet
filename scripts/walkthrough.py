@@ -1,6 +1,6 @@
 """Follow ONE video through DSNet end to end, printing what happens at each step.
 
-Run from anywhere:  python walkthrough.py
+Run from the repository root:  python -m scripts.walkthrough
 Uses the authors' pretrained anchor-based checkpoint (tvsum split 0) and a test video.
 """
 import sys
@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-SRC = Path(__file__).parent / "DSNet" / "src"
+SRC = Path(__file__).resolve().parents[1] / "DSNet" / "src"
 sys.path.insert(0, str(SRC))
 from anchor_based import anchor_helper  # noqa: E402
 from anchor_based.dsnet import DSNet  # noqa: E402

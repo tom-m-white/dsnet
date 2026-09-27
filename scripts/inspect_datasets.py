@@ -5,7 +5,7 @@ Answers from the meeting notes:
   - TVSum (50 videos) vs SumMe (25 videos): how do they differ?
   - Prove that splits/*.yml define separate TRAINING and TESTING sets.
 
-Run:  python inspect_datasets.py
+Run:  python -m scripts.inspect_datasets
 """
 from collections import Counter
 from pathlib import Path
@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 import yaml
 
-ROOT = Path(__file__).parent / "DSNet"
+ROOT = Path(__file__).resolve().parents[1] / "DSNet"
 DATA = ROOT / "datasets"
 
 
