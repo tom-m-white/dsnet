@@ -26,7 +26,7 @@ Run the module commands from the repository root. Historical entries below retai
 their original names; this table maps them to current locations. README now provides
 the current status, the professor's conventions, everyday commands and a file map.
 
-As states previously, Dr. Wong wants reproducibility in the paper, in order to have
+As states previously, Dr. Wang wants reproducibility in the paper, in order to have
 none of the critical files where change/modified. This means
 Preserve datasets, DSNet, patches, checkpoints, frame scores, all official results,
 and training-only validation evidence. They support reproducibility and the paper.

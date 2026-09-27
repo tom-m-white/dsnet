@@ -1,6 +1,6 @@
 # Video summarization: graph-branch ablation
 
-Research with Dr. Wong: measure what accuracy and runtime cost change when forward,
+Research with Dr. Wang: measure what accuracy and runtime cost change when forward,
 backward and omni graph branches are removed from a simplified DSTG-VS model.
 Tom owns the software; Dakota owns hardware benchmarking and energy measurements.
 
