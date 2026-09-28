@@ -13,6 +13,7 @@ datasets/
 models/
 scores/
 results/
+handoff_packages/
 *.npz
 *.pt
 

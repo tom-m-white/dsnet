@@ -70,9 +70,34 @@ class ModelTests(unittest.TestCase):
         for x in (np.empty((0, 3)), np.array([[np.nan]]), np.ones(3)):
             with self.assertRaises(ValueError):
                 build_graphs(x)
-        for graphs in ([], ["fwd", "fwd"], ["unknown"]):
+        for graphs in (["fwd", "fwd"], ["unknown"]):
             with self.assertRaises(ValueError):
                 DSTG(graphs=graphs)
+
+    def test_graph_free_control_is_rowwise_and_has_no_graph_parameters(self):
+        model = DSTG(graphs=[])
+        self.assertEqual(model.prepare_graphs(self.x), {})
+        self.assertEqual(len(model.gat), 0)
+        self.assertIsNone(model.shared_sage)
+        y = model(self.x)
+        changed = self.x.clone()
+        changed[4] += 5
+        other = model(changed)
+        keep = torch.arange(len(y)) != 4
+        torch.testing.assert_close(y[keep], other[keep])
+        self.assertNotEqual(y[4].item(), other[4].item())
+        y.sum().backward()
+        self.assertTrue(all(p.grad is not None for p in model.parameters()))
+
+    def test_output_rows_follow_node_ids_with_remapped_edges(self):
+        model = DSTG().eval()
+        edges = model.prepare_graphs(self.x)
+        permutation = torch.randperm(len(self.x))
+        inverse = torch.argsort(permutation)
+        remapped = {g: (inverse[ei], ew) for g, (ei, ew) in edges.items()}
+        torch.testing.assert_close(model(self.x, edges)[permutation],
+                                   model(self.x[permutation], remapped), atol=1e-6, rtol=1e-5)
+        self.assertEqual(tuple(model(self.x[:1]).shape), (1,))
 
 
 if __name__ == "__main__":

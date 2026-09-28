@@ -17,8 +17,8 @@ class DSTG(nn.Module):
     def __init__(self, graphs=("fwd", "bwd", "omni"), input_dim=1024,
                  hidden_dim=192, heads=1, dropout=0.0, graph_config=None):
         super().__init__()
-        if not graphs or len(set(graphs)) != len(graphs) or set(graphs) - set(GRAPH_NAMES):
-            raise ValueError("graphs must be a nonempty, unique subset of fwd, bwd, omni")
+        if len(set(graphs)) != len(graphs) or set(graphs) - set(GRAPH_NAMES):
+            raise ValueError("graphs must be a unique subset of fwd, bwd, omni (empty enables control)")
         self.graphs = tuple(g for g in GRAPH_NAMES if g in graphs)
         self.input_dim = input_dim
         self.graph_config = dict(graph_config or {})
@@ -26,14 +26,19 @@ class DSTG(nn.Module):
         self.gat = nn.ModuleDict({g: GATConv(
             input_dim, hidden_dim, heads=heads, concat=False,
             edge_dim=1, dropout=dropout, fill_value=1.0) for g in self.graphs})
-        self.shared_sage = SAGEConv(hidden_dim, hidden_dim)
+        self.shared_sage = SAGEConv(hidden_dim, hidden_dim) if self.graphs else None
         self.independent_sage = nn.ModuleDict({
             g: SAGEConv(hidden_dim, hidden_dim) for g in self.graphs
         })
         self.head = nn.Linear(hidden_dim, 1)
+        # Graph-free diagnostic: per-frame 1024 -> 192 -> 1 MLP. No mixing,
+        # graph preparation or inactive graph parameters. Existing V1-V5 unchanged.
+        self.input_projection = nn.Linear(input_dim, hidden_dim) if not self.graphs else None
 
     def prepare_graphs(self, x):
         """Algorithm 1 on fixed raw features; PyG rows are source, target."""
+        if not self.graphs:
+            return {}
         arrays = build_graphs(x.detach().cpu().numpy(), **self.graph_config)
         adjacency = dict(zip(("fwd", "omni", "bwd"), arrays))
         result = {}
@@ -46,6 +51,8 @@ class DSTG(nn.Module):
     def forward(self, x, edges=None):
         if x.ndim != 2 or x.shape[1] != self.input_dim or x.shape[0] == 0:
             raise ValueError(f"expected nonempty T x {self.input_dim} input")
+        if not self.graphs:
+            return self.head(self.input_projection(x).relu()).squeeze(-1).sigmoid()
         if edges is None:
             edges = self.prepare_graphs(x)
         total = None

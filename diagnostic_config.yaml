@@ -1,0 +1,10 @@
+experiment: 20260927_signal
+dataset: summe
+splits: [0, 1, 2, 3, 4]
+seed: 0
+random_repeats: 100
+random_seed_start: 10000
+near_constant_std_threshold: 0.001
+near_constant_range_threshold: 0.001
+graph_free_variant: G0
+graph_free_graphs: []

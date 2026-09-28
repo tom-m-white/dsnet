@@ -5,12 +5,21 @@ import unittest
 from pathlib import Path
 
 import torch
+import numpy as np
 
 from aggregate import aggregate
 from benchmark import benchmark
+from evaluate import scores_to_summary
 
 
 class PipelineTests(unittest.TestCase):
+    def test_sampled_score_maps_to_its_original_frame_interval(self):
+        # An isolated high score at sampled row 1 must select frames [2, 5).
+        summary = scores_to_summary(
+            np.array([0., 1., 0.]), np.array([[i, i] for i in range(10)]),
+            10, np.ones(10, dtype=int), np.array([0, 2, 5]), proportion=0.3)
+        np.testing.assert_array_equal(np.flatnonzero(summary), [2, 3, 4])
+
     def test_aggregate_rejects_missing_and_mismatched_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = {

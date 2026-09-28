@@ -12,6 +12,9 @@ Tom owns the software; Dakota owns hardware benchmarking and energy measurements
 - All 15 training-only validation runs are complete. The tested regularization changes
   did not resolve weak generalization. These are diagnostics, not replacement test results.
 - The full 150-run sweep and Jetson/Pi energy measurements remain pending.
+- [Signal diagnostics](docs/diagnostics.md) are complete: training tau=0.3407,
+  no constant-output collapse or detected row-alignment error, and graph-free
+  test tau=-0.0205. The sweep remains on hold; a graph-specific failure is not established.
 
 Start with [decisions.md](decisions.md) for the rationale and latest results,
 [the baseline report](docs/baseline.md) for the first V5 experiment, and

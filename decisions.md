@@ -4,6 +4,71 @@ These are judgment calls and findings, newest are first (top).
 
 ---
 
+## 2026-09-27: Checkpoints and results on Google Drive
+
+Organize the checkpoints and results requested by Dr. Wang in the
+[research folder](https://drive.google.com/drive/folders/1UQVa6sIBhWPkS6UU8rK5nOZaa02C-djH?usp=sharing).
+The folder contains directly browsable `Checkpoints` (25 .pt files) and `Results`
+(31 .json files). Filenames distinguish original V5 runs, training-only validation
+conditions, and graph-free/signal diagnostics. All 56 uploaded filenames and sizes
+were verified against the local files. Keep source code and datasets in their
+existing local locations. The link above should give you edit access to it^
+
+---
+
+## 2026-09-27: Dr. Wang's signal diagnostics completed
+
+Purpose: investigate generalization before spending time on the 150-run sweep.
+Check for chance-level evaluation, constant predictions, failure to learn,
+graph-specific damage, and misalignment before changing the architecture.
+
+| Five-split mean, SumMe | F-score (%) | tau | rho |
+|---|---:|---:|---:|
+| Existing V5 checkpoints, own training videos | 63.4007 | 0.340697 | 0.416211 |
+| Existing V5 checkpoints, held-out videos | 39.8821 | -0.019703 | -0.024048 |
+| Random scores, held-out videos, 100 draws | 40.7973 | -0.000068 | -0.000083 |
+| Fresh graph-free control, held-out videos | 37.6195 | -0.020513 | -0.025082 |
+
+The checkpoints learn the training signal: training tau is positive in all five
+splits. Held-out predictions are not nearly constant: within-video standard
+deviations range from 0.02821 to 0.10316, and ranges from 0.17044 to 0.53280
+across 25 test placements. None fall below the declared 0.001 thresholds.
+This does not exclude all forms of hidden-layer over-smoothing.
+
+Alignment checks pass on all 125 train/test placements: output, target and picks
+length equal T; picks are ordered and in bounds; targets match sampled annotation
+means. Saved test predictions are reproduced. Tests also check node identity
+with remapped edges and the mapping from sampled scores to original-frame
+intervals. This implementation has no CLS token. Raw-video feature extraction
+was not independently audited.
+
+Allow `graphs=[]` in the same model class for a diagnostic per-frame MLP:
+1024 -> 192 (ReLU) -> 1 (sigmoid), 196,993 parameters. Use the unchanged training
+and evaluation pipeline, seed 0 and 300 final epochs on each original split.
+This control is not parameter-matched to V5 and is not a sixth topology variant.
+Its held-out tau is negative in every split. Outputs live separately under
+`results/diagnostics/20260927_signal/graph_free/`.
+
+Decision: the evidence supports poor generalization, but does not isolate the
+graph branches as the cause. Do not launch the conditional residual experiment
+or 150-run sweep yet. Dataset scarcity remains a hypothesis, not an established
+cause. Share the diagnostics with Dr. Wang before deciding the next experiment;
+future tuning must use training-only validation rather than these test scores.
+
+Random baseline seeds are 10000-10099. The standard deviations across random
+five-split means are 1.9178 F-score points, 0.007680 tau and 0.009375 rho;
+these are Monte Carlo variation, not generalization confidence intervals.
+
+All 13 unit tests and 13 toy graph checks pass. Historical model source was
+preserved before adding graph-free support, with a hash manifest, in the
+diagnostic `source_before/` folder. All 125 checkpoint predictions match the
+historical implementation within rtol=1e-4 and atol=2e-6. Old source hashes
+remain attached to old results; the edited model has a new hash.
+
+See [the diagnostic report](docs/diagnostics.md) for evidence paths and reproduction.
+
+---
+
 ## 2026-09-27: Repository organization for the agreed research workflow
 
 The repo was quite messy, so in order to keep tidiness (especially when transfering this to Dakotas Laptop),
